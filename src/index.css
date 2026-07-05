@@ -1,0 +1,90 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-display: "Outfit", system-ui, sans-serif;
+
+  /* Brand Accents */
+  --color-brand-blue: #0078d4;      /* Microsoft Fabric Blue */
+  --color-brand-orange: #ff6f00;    /* Databricks Orange */
+  --color-brand-yellow: #f2c811;    /* Power BI Gold */
+  --color-brand-teal: #00b7c3;      /* Microsoft Teal */
+
+  /* Theme Tokens */
+  --color-fabric-bg-light: #f3f2f1;
+  --color-fabric-card-light: #ffffff;
+  --color-fabric-border-light: #edebe9;
+  --color-fabric-text-light: #323130;
+  --color-fabric-text-secondary-light: #605e5c;
+
+  --color-fabric-bg-dark: #0b111e;
+  --color-fabric-card-dark: #151e33;
+  --color-fabric-border-dark: #23304c;
+  --color-fabric-text-dark: #f3f2f1;
+  --color-fabric-text-secondary-dark: #a1a7b5;
+
+  --animate-fade-in: fade-in 0.4s ease-out forwards;
+  --animate-slide-up: slide-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Base Styles & Customizations */
+@layer base {
+  body {
+    @apply font-sans transition-colors duration-200 antialiased overflow-x-hidden bg-fabric-bg-light text-fabric-text-light dark:bg-fabric-bg-dark dark:text-fabric-text-dark;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display tracking-tight;
+  }
+
+  /* Custom Scrollbars */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600;
+  }
+}
+
+/* Glassmorphism utility */
+.glass-panel {
+  @apply bg-white/70 dark:bg-[#151e33]/70 backdrop-blur-md border border-white/20 dark:border-white/5 shadow-lg;
+}
+
+/* Recharts styling overrides for dark mode readability */
+.recharts-default-tooltip {
+  @apply rounded-xl shadow-xl px-4 py-3 text-xs font-sans text-white font-medium outline-none opacity-95 backdrop-blur-md;
+  background-color: #151e33 !important;
+  border: 1px solid #23304c !important;
+}
+
+.recharts-tooltip-item {
+  padding-top: 0.125rem !important;
+  padding-bottom: 0.125rem !important;
+}
