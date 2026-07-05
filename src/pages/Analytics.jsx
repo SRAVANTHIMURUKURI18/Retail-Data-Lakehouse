@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { getAnalyticsData } from '../services/api';
+import { getAnalyticsData, getDatasets } from '../services/api';
 import { DataTable } from '../components/Tables';
 import { SkeletonTable, SkeletonChart } from '../components/Loader';
 import { formatCurrency, formatNumber, formatDiscount } from '../utils/helpers';
@@ -27,18 +27,26 @@ export const Analytics = ({ isDark }) => {
   const [stateFilter, setStateFilter] = useState('All');
   const [discountFilter, setDiscountFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
+  
+  const [datasetsList, setDatasetsList] = useState([]);
+  const [datasetFilter, setDatasetFilter] = useState('all');
 
   const fetchFilteredData = async () => {
     setLoading(true);
     try {
-      const data = await getAnalyticsData({
-        region: regionFilter,
-        category: categoryFilter,
-        state: stateFilter,
-        discount: discountFilter,
-        search: searchQuery
-      });
+      const [data, allDatasets] = await Promise.all([
+        getAnalyticsData({
+          region: regionFilter,
+          category: categoryFilter,
+          state: stateFilter,
+          discount: discountFilter,
+          search: searchQuery,
+          datasetId: datasetFilter
+        }),
+        getDatasets()
+      ]);
       setTransactions(data);
+      setDatasetsList(allDatasets.filter(d => d.status === 'Processed'));
     } catch (err) {
       console.error('Error fetching analytics transactions:', err);
     } finally {
@@ -48,7 +56,7 @@ export const Analytics = ({ isDark }) => {
 
   useEffect(() => {
     fetchFilteredData();
-  }, [regionFilter, categoryFilter, stateFilter, discountFilter, searchQuery]);
+  }, [regionFilter, categoryFilter, stateFilter, discountFilter, searchQuery, datasetFilter]);
 
   // Derive unique values for filters from initial/full database if possible
   // For simplicity, we define standard static unique values matching our mock generator
@@ -155,7 +163,7 @@ export const Analytics = ({ isDark }) => {
           <h3 className="font-display text-sm font-bold text-fabric-text-light dark:text-fabric-text-dark">Filter Console</h3>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
           {/* Region */}
           <div className="flex flex-col space-y-1.5">
             <span className="text-[10px] font-bold uppercase tracking-wider text-fabric-text-secondary-light dark:text-fabric-text-secondary-dark">
@@ -209,6 +217,24 @@ export const Analytics = ({ isDark }) => {
               className="rounded-xl border border-fabric-border-light bg-gray-50/50 p-2.5 text-xs text-fabric-text-light dark:border-fabric-border-dark dark:bg-fabric-bg-dark/40 dark:text-fabric-text-dark outline-none cursor-pointer focus:border-brand-blue/50 dark:focus:border-brand-orange/50"
             >
               {discounts.map(d => <option key={d} value={d === 'All' ? 'All' : d.replace('%','')}>{d}</option>)}
+            </select>
+          </div>
+
+          {/* Dataset Source */}
+          <div className="flex flex-col space-y-1.5 col-span-2 lg:col-span-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-fabric-text-secondary-light dark:text-fabric-text-secondary-dark">
+              Dataset Source
+            </span>
+            <select
+              value={datasetFilter}
+              onChange={(e) => setDatasetFilter(e.target.value)}
+              className="rounded-xl border border-fabric-border-light bg-gray-50/50 p-2.5 text-xs text-fabric-text-light dark:border-fabric-border-dark dark:bg-fabric-bg-dark/40 dark:text-fabric-text-dark outline-none cursor-pointer focus:border-brand-blue/50 dark:focus:border-brand-orange/50"
+            >
+              <option value="all">All Gold Data</option>
+              <option value="baseline">System Baseline</option>
+              {datasetsList.map(ds => (
+                <option key={ds.id} value={ds.id}>{ds.fileName}</option>
+              ))}
             </select>
           </div>
         </div>

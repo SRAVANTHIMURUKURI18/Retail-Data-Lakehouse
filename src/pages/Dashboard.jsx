@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getDashboard, getRegionSales, getCategorySales, getTopStates, getDiscountAnalysis } from '../services/api';
+import { getDashboard, getRegionSales, getCategorySales, getTopStates, getDiscountAnalysis, getDatasets } from '../services/api';
 import { KPICard } from '../components/KPICard';
 import { 
   SalesByRegionChart, 
@@ -26,22 +26,27 @@ export const Dashboard = ({ isDark }) => {
   const [categorySales, setCategorySales] = useState([]);
   const [topStates, setTopStates] = useState([]);
   const [discountAnalysis, setDiscountAnalysis] = useState([]);
+  
+  const [datasetsList, setDatasetsList] = useState([]);
+  const [selectedDataset, setSelectedDataset] = useState('all');
 
-  const fetchData = async () => {
+  const fetchData = async (datasetId = selectedDataset) => {
     setLoading(true);
     try {
-      const [dash, reg, cat, states, disc] = await Promise.all([
-        getDashboard(),
-        getRegionSales(),
-        getCategorySales(),
-        getTopStates(),
-        getDiscountAnalysis()
+      const [dash, reg, cat, states, disc, allDatasets] = await Promise.all([
+        getDashboard({ datasetId }),
+        getRegionSales({ datasetId }),
+        getCategorySales({ datasetId }),
+        getTopStates({ datasetId }),
+        getDiscountAnalysis({ datasetId }),
+        getDatasets()
       ]);
       setDashboardData(dash);
       setRegionSales(reg);
       setCategorySales(cat);
       setTopStates(states);
       setDiscountAnalysis(disc);
+      setDatasetsList(allDatasets.filter(d => d.status === 'Processed'));
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
     } finally {
@@ -50,8 +55,8 @@ export const Dashboard = ({ isDark }) => {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    fetchData(selectedDataset);
+  }, [selectedDataset]);
 
   if (loading) {
     return (
@@ -75,22 +80,58 @@ export const Dashboard = ({ isDark }) => {
   return (
     <div className="space-y-7 animate-fade-in">
       {/* Title Header */}
-      <div className="flex flex-col space-y-2 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
+      <div className="flex flex-col space-y-3 md:flex-row md:items-center md:justify-between md:space-y-0">
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-fabric-text-light dark:text-fabric-text-dark">
             Lakehouse Dashboard
           </h1>
           <p className="text-xs text-fabric-text-secondary-light dark:text-fabric-text-secondary-dark font-medium mt-0.5">
-            Real-time analytics aggregated from Databricks Gold tables
+            Real-time analytics aggregated from Databricks Gold tables.
+            {selectedDataset === 'all' && datasetsList.length > 0 && (
+              <span className="text-[11px] font-semibold text-brand-blue dark:text-brand-orange ml-1.5">
+                (Consolidated baseline + {datasetsList.length} custom dataset{datasetsList.length > 1 ? 's' : ''})
+              </span>
+            )}
+            {selectedDataset === 'baseline' && (
+              <span className="text-[11px] font-semibold text-brand-blue dark:text-brand-orange ml-1.5">
+                (System Baseline)
+              </span>
+            )}
+            {selectedDataset !== 'all' && selectedDataset !== 'baseline' && (
+              <span className="text-[11px] font-semibold text-brand-blue dark:text-brand-orange ml-1.5">
+                (Filtered: {datasetsList.find(d => d.id === selectedDataset)?.fileName || 'Custom File'})
+              </span>
+            )}
           </p>
         </div>
-        <button
-          onClick={fetchData}
-          className="flex items-center space-x-2 rounded-xl border border-fabric-border-light bg-fabric-card-light px-3.5 py-2 text-xs font-semibold text-fabric-text-light hover:bg-gray-50 dark:border-fabric-border-dark dark:bg-fabric-card-dark dark:text-fabric-text-dark dark:hover:bg-fabric-border-dark/55 transition-all shadow-sm hover:-translate-y-0.5"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-          <span>Refresh Data</span>
-        </button>
+        
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Active Dataset Dropdown Selector */}
+          <div className="flex items-center space-x-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-fabric-text-secondary-light dark:text-fabric-text-secondary-dark whitespace-nowrap">
+              Active Dataset:
+            </span>
+            <select
+              value={selectedDataset}
+              onChange={(e) => setSelectedDataset(e.target.value)}
+              className="rounded-xl border border-fabric-border-light bg-fabric-card-light p-2.5 text-xs font-semibold text-fabric-text-light dark:border-fabric-border-dark dark:bg-fabric-card-dark dark:text-fabric-text-dark outline-none cursor-pointer focus:border-brand-blue/50 dark:focus:border-brand-orange/50 shadow-sm"
+            >
+              <option value="all">All Consolidated Gold View</option>
+              <option value="baseline">System Baseline Data</option>
+              {datasetsList.map(ds => (
+                <option key={ds.id} value={ds.id}>{ds.fileName}</option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            onClick={() => fetchData(selectedDataset)}
+            className="flex items-center space-x-2 rounded-xl border border-fabric-border-light bg-fabric-card-light px-3.5 py-2.5 text-xs font-semibold text-fabric-text-light hover:bg-gray-50 dark:border-fabric-border-dark dark:bg-fabric-card-dark dark:text-fabric-text-dark dark:hover:bg-fabric-border-dark/55 transition-all shadow-sm hover:-translate-y-0.5"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            <span>Refresh Data</span>
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards Grid */}

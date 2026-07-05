@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { triggerPipeline } from '../services/api';
+import { triggerPipeline, getDatasets } from '../services/api';
 import { Toast } from '../components/Toast';
 import { 
   Play, 
@@ -60,6 +60,18 @@ export const PipelineStatus = () => {
     addLog('Connecting Spark cluster to Volumes/workspace/retail_project/raw_data...');
 
     try {
+      const allDatasets = await getDatasets();
+      const pending = allDatasets.filter(d => d.status === 'Ingested');
+      
+      if (pending.length > 0) {
+        addLog(`Discovered ${pending.length} pending raw file(s) in volume storage:`);
+        pending.forEach(p => {
+          addLog(`  - ${p.fileName} (${p.rowsCount} rows)`);
+        });
+      } else {
+        addLog('No new raw files discovered. Running pipeline to refresh existing schemas.');
+      }
+
       const result = await triggerPipeline((update) => {
         // Callback updates state mid-stage execution
         setActiveStage(update.activeStage);
@@ -74,7 +86,7 @@ export const PipelineStatus = () => {
           return {
             key: s.key,
             name: s.name,
-            rows: rows || (s.status === 'Running' ? Math.floor(s.rows * 0.7) : 0),
+            rows: rows || (s.status === 'Running' ? Math.max(1, Math.floor(s.rows * 0.7)) : 0),
             duration: s.status === 'Completed' ? s.duration : s.status === 'Running' ? 'Processing...' : '--',
             status: s.status
           };
@@ -93,16 +105,25 @@ export const PipelineStatus = () => {
       setStageStatus('succeeded');
       showToast('ETL Pipeline job completed successfully. Gold tables refreshed!', 'success');
       
-      // Update all stages to full mock values
+      // Calculate total rows
+      const totalPendingRows = pending.reduce((sum, d) => sum + d.rowsCount, 0);
+      const totalGoldRows = 250 + allDatasets.reduce((sum, d) => sum + (d.status === 'Processed' || d.status === 'Ingested' ? d.rowsCount : 0), 0);
+
+      // Update all stages to actual values
       setStages([
-        { key: 'ingestion', name: 'Raw Ingestion', rows: 250, duration: '1.2s', status: 'Completed' },
-        { key: 'bronze', name: 'Bronze Ingestion Table', rows: 250, duration: '2.5s', status: 'Completed' },
-        { key: 'silver', name: 'Silver Sales Table', rows: 238, duration: '3.1s', status: 'Completed' },
-        { key: 'gold', name: 'Gold Analytics Cubes', rows: 28, duration: '4.2s', status: 'Completed' }
+        { key: 'ingestion', name: 'Raw Ingestion', rows: totalPendingRows, duration: '1.2s', status: 'Completed' },
+        { key: 'bronze', name: 'Bronze Ingestion Table', rows: totalPendingRows, duration: '2.5s', status: 'Completed' },
+        { key: 'silver', name: 'Silver Sales Table', rows: totalPendingRows, duration: '3.1s', status: 'Completed' },
+        { key: 'gold', name: 'Gold Analytics Cubes', rows: totalGoldRows, duration: '4.2s', status: 'Completed' }
       ]);
 
       addLog(`ETL Pipeline job SUCCEEDED in ${result.totalDuration}.`);
-      addLog(`Refreshed tables: ${result.goldTablesUpdated.join(', ')}.`);
+      if (result.processedFiles && result.processedFiles.length > 0) {
+        addLog(`Successfully processed files: ${result.processedFiles.join(', ')}.`);
+        addLog(`Merged ${totalPendingRows} new records into Gold Warehouse tables.`);
+      }
+      addLog(`Refreshed Gold tables: ${result.goldTablesUpdated.join(', ')}.`);
+      addLog(`Total rows active in Gold Layer: ${totalGoldRows}.`);
       addLog('Data Cube aggregates pushed to BI Presentation layer.');
 
     } catch (err) {

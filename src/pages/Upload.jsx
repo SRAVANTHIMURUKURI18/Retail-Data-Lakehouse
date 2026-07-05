@@ -1,6 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { uploadCSV } from '../services/api';
+import { uploadCSV, getDatasets, deleteDataset, resetLakehouse } from '../services/api';
 import { Toast } from '../components/Toast';
 import { 
   UploadCloud, 
@@ -11,7 +11,10 @@ import {
   AlertCircle, 
   Loader2,
   FileCheck2,
-  Cpu
+  Cpu,
+  Database,
+  Trash2,
+  RotateCcw
 } from 'lucide-react';
 
 export const Upload = () => {
@@ -25,6 +28,9 @@ export const Upload = () => {
   const [uploadStatus, setUploadStatus] = useState('idle'); // idle, uploading, success, error
   const [uploadResult, setUploadResult] = useState(null);
   
+  const [datasets, setDatasets] = useState([]);
+  const [loadingDatasets, setLoadingDatasets] = useState(false);
+
   const [toastMessage, setToastMessage] = useState(null);
   const [toastType, setToastType] = useState('success');
 
@@ -80,6 +86,7 @@ export const Upload = () => {
       setUploadStatus('success');
       setUploadResult(result);
       showToast('Superstore CSV parsed and uploaded successfully!', 'success');
+      fetchDatasets();
     } catch (err) {
       setUploadStatus('error');
       showToast(err.message || 'File upload failed. Ensure the CSV conforms to the Superstore schema.', 'error');
@@ -87,6 +94,46 @@ export const Upload = () => {
       setIsUploading(false);
     }
   };
+
+  const fetchDatasets = async () => {
+    setLoadingDatasets(true);
+    try {
+      const data = await getDatasets();
+      setDatasets(data);
+    } catch (err) {
+      console.error('Error fetching datasets:', err);
+    } finally {
+      setLoadingDatasets(false);
+    }
+  };
+
+  const handleDeleteDataset = async (id, name) => {
+    if (window.confirm(`Are you sure you want to delete "${name}" from the Lakehouse? This will delete all its rows from Bronze and Gold tables.`)) {
+      try {
+        await deleteDataset(id);
+        showToast(`Dataset "${name}" successfully deleted from the catalog.`, 'success');
+        fetchDatasets();
+      } catch (err) {
+        showToast('Failed to delete dataset.', 'error');
+      }
+    }
+  };
+
+  const handleResetLakehouse = async () => {
+    if (window.confirm('Are you sure you want to restore the Lakehouse to its default baseline? This will delete ALL uploaded datasets and revert the Gold tables to the initial 250 records.')) {
+      try {
+        await resetLakehouse();
+        showToast('Lakehouse successfully restored to system default baseline.', 'success');
+        fetchDatasets();
+      } catch (err) {
+        showToast('Failed to reset Lakehouse.', 'error');
+      }
+    }
+  };
+
+  useEffect(() => {
+    fetchDatasets();
+  }, []);
 
   const clearFile = () => {
     setFile(null);
@@ -286,6 +333,108 @@ export const Upload = () => {
             </ul>
           </div>
         </div>
+      </div>
+
+      {/* Lakehouse Catalog Table */}
+      <div className="rounded-3xl border border-fabric-border-light bg-fabric-card-light p-6 shadow-sm dark:border-fabric-border-dark dark:bg-fabric-card-dark transition-all duration-300">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-fabric-border-light pb-4 dark:border-fabric-border-dark mb-5 gap-3">
+          <div className="flex items-center space-x-2.5">
+            <Database className="h-5 w-5 text-brand-blue dark:text-brand-orange" />
+            <div>
+              <h3 className="font-display text-sm font-bold text-fabric-text-light dark:text-fabric-text-dark">
+                Data Lakehouse Catalog (Delta Tables Status)
+              </h3>
+              <p className="text-[11px] text-fabric-text-secondary-light dark:text-fabric-text-secondary-dark font-medium mt-0.5">
+                Delta Lake status of uploaded transaction files in storage layers.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleResetLakehouse}
+            className="flex items-center space-x-2 rounded-xl border border-rose-200 bg-rose-50/30 hover:bg-rose-50 px-3.5 py-2 text-xs font-semibold text-rose-600 dark:border-rose-950/45 dark:bg-rose-950/10 dark:text-rose-400 dark:hover:bg-rose-950/20 transition-all shadow-sm"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            <span>Restore Default Warehouse</span>
+          </button>
+        </div>
+
+        {loadingDatasets ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-brand-blue dark:text-brand-orange" />
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-fabric-border-light dark:border-fabric-border-dark animate-fade-in">
+            <table className="w-full border-collapse text-left text-xs">
+              <thead>
+                <tr className="border-b border-fabric-border-light bg-gray-50 dark:border-fabric-border-dark dark:bg-fabric-bg-dark/60">
+                  <th className="px-5 py-3 font-semibold text-fabric-text-secondary-light dark:text-fabric-text-secondary-dark">Dataset / File</th>
+                  <th className="px-5 py-3 font-semibold text-fabric-text-secondary-light dark:text-fabric-text-secondary-dark">Lakehouse Stage</th>
+                  <th className="px-5 py-3 font-semibold text-fabric-text-secondary-light dark:text-fabric-text-secondary-dark text-right">Rows</th>
+                  <th className="px-5 py-3 font-semibold text-fabric-text-secondary-light dark:text-fabric-text-secondary-dark">Timestamp</th>
+                  <th className="px-5 py-3 font-semibold text-fabric-text-secondary-light dark:text-fabric-text-secondary-dark text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-fabric-border-light dark:divide-fabric-border-dark">
+                {/* Default Baseline Data Row */}
+                <tr className="hover:bg-gray-50/50 dark:hover:bg-fabric-bg-dark/20 transition-colors">
+                  <td className="px-5 py-3 font-bold text-fabric-text-light dark:text-fabric-text-dark flex items-center space-x-2">
+                    <FileSpreadsheet className="h-4 w-4 text-brand-blue dark:text-brand-orange" />
+                    <span>default_baseline_superstore</span>
+                  </td>
+                  <td className="px-5 py-3">
+                    <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400">
+                      Gold (System Baseline)
+                    </span>
+                  </td>
+                  <td className="px-5 py-3 text-right font-semibold text-fabric-text-light dark:text-fabric-text-dark">250</td>
+                  <td className="px-5 py-3 text-fabric-text-secondary-light dark:text-fabric-text-secondary-dark">System Built-in</td>
+                  <td className="px-5 py-3 text-center">
+                    <span className="text-gray-400 dark:text-gray-600 text-[10px] font-semibold">Locked</span>
+                  </td>
+                </tr>
+                
+                {/* Dynamically Loaded Datasets */}
+                {datasets.length === 0 ? (
+                  <tr>
+                    <td colSpan="5" className="px-5 py-8 text-center text-fabric-text-secondary-light dark:text-fabric-text-secondary-dark font-medium italic">
+                      No custom datasets uploaded yet. Drop a CSV file above to ingest.
+                    </td>
+                  </tr>
+                ) : (
+                  datasets.map((dataset) => (
+                    <tr key={dataset.id} className="hover:bg-gray-50/50 dark:hover:bg-fabric-bg-dark/20 transition-colors">
+                      <td className="px-5 py-3 font-bold text-fabric-text-light dark:text-fabric-text-dark flex items-center space-x-2">
+                        <FileSpreadsheet className="h-4 w-4 text-amber-500" />
+                        <span className="truncate max-w-[200px]" title={dataset.fileName}>{dataset.fileName}</span>
+                      </td>
+                      <td className="px-5 py-3">
+                        {dataset.status === 'Ingested' ? (
+                          <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 animate-pulse">
+                            Bronze (Pending ETL)
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-[10px] font-bold text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-400">
+                            Gold (Processed)
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-right font-semibold text-fabric-text-light dark:text-fabric-text-dark">{dataset.rowsCount}</td>
+                      <td className="px-5 py-3 text-fabric-text-secondary-light dark:text-fabric-text-secondary-dark">{dataset.uploadedAt}</td>
+                      <td className="px-5 py-3 text-center">
+                        <button
+                          onClick={() => handleDeleteDataset(dataset.id, dataset.fileName)}
+                          className="rounded-lg p-1 text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors hover:bg-rose-500/5"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Toast alert */}

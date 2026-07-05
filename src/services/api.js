@@ -97,7 +97,95 @@ const generateMockTransactions = () => {
   return data.sort((a, b) => new Date(b.orderDate) - new Date(a.orderDate));
 };
 
-let mockDatabase = generateMockTransactions();
+const GOLD_STORAGE_KEY = 'lakehouse_gold_db';
+const DATASETS_STORAGE_KEY = 'lakehouse_datasets';
+
+const getGoldDatabase = () => {
+  const stored = localStorage.getItem(GOLD_STORAGE_KEY);
+  if (stored) {
+    try {
+      return JSON.parse(stored);
+    } catch (e) {
+      console.error("Failed to parse stored mock database, regenerating...", e);
+    }
+  }
+  const initial = generateMockTransactions();
+  localStorage.setItem(GOLD_STORAGE_KEY, JSON.stringify(initial));
+  return initial;
+};
+
+const getDatasetsList = () => {
+  const stored = localStorage.getItem(DATASETS_STORAGE_KEY);
+  if (stored) {
+    try {
+      return JSON.parse(stored);
+    } catch (e) {
+      console.error("Failed to parse stored datasets list, returning empty...", e);
+    }
+  }
+  return [];
+};
+
+const saveGoldDatabase = (data) => {
+  localStorage.setItem(GOLD_STORAGE_KEY, JSON.stringify(data));
+};
+
+const saveDatasetsList = (datasets) => {
+  localStorage.setItem(DATASETS_STORAGE_KEY, JSON.stringify(datasets));
+};
+
+// Expose datasets and database controls
+export const getDatasets = async () => {
+  await delay(300);
+  return getDatasetsList();
+};
+
+export const deleteDataset = async (datasetId) => {
+  await delay(400);
+  const datasets = getDatasetsList().filter(d => d.id !== datasetId);
+  saveDatasetsList(datasets);
+
+  // Remove rows from gold database
+  const goldDb = getGoldDatabase().filter(item => item.sourceDatasetId !== datasetId);
+  saveGoldDatabase(goldDb);
+};
+
+export const resetLakehouse = async () => {
+  await delay(500);
+  localStorage.removeItem(GOLD_STORAGE_KEY);
+  localStorage.removeItem(DATASETS_STORAGE_KEY);
+};
+
+// Simple CSV Line Parser that handles quotes
+const parseCSVLine = (line) => {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  result.push(current.trim());
+  return result;
+};
+
+const getFilteredDatabase = (datasetId) => {
+  const goldDb = getGoldDatabase();
+  if (!datasetId || datasetId === 'all') {
+    return goldDb;
+  }
+  if (datasetId === 'baseline') {
+    return goldDb.filter(item => !item.sourceDatasetId);
+  }
+  return goldDb.filter(item => item.sourceDatasetId === datasetId);
+};
 
 // ----------------------------------------------------
 // Helper for API simulated response delay
@@ -119,20 +207,21 @@ export const login = async (email, password) => {
   throw new Error('Invalid email or password (must be at least 4 characters)');
 };
 
-export const getDashboard = async () => {
+export const getDashboard = async (filters = {}) => {
   await delay(700);
-  const totalSales = mockDatabase.reduce((sum, item) => sum + item.sales, 0);
-  const totalProfit = mockDatabase.reduce((sum, item) => sum + item.profit, 0);
-  const totalQuantity = mockDatabase.reduce((sum, item) => sum + item.quantity, 0);
+  const db = getFilteredDatabase(filters.datasetId);
+  const totalSales = db.reduce((sum, item) => sum + item.sales, 0);
+  const totalProfit = db.reduce((sum, item) => sum + item.profit, 0);
+  const totalQuantity = db.reduce((sum, item) => sum + item.quantity, 0);
   
-  const uniqueRegions = new Set(mockDatabase.map(item => item.region)).size;
-  const uniqueCategories = new Set(mockDatabase.map(item => item.category)).size;
+  const uniqueRegions = new Set(db.map(item => item.region)).size;
+  const uniqueCategories = new Set(db.map(item => item.category)).size;
 
   // Calculate monthly sales trend
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const trendMap = {};
   
-  mockDatabase.forEach(item => {
+  db.forEach(item => {
     const date = new Date(item.orderDate);
     const yearMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
     const displayLabel = `${months[date.getMonth()]} ${String(date.getFullYear()).substring(2)}`;
@@ -167,10 +256,11 @@ export const getDashboard = async () => {
   };
 };
 
-export const getRegionSales = async () => {
+export const getRegionSales = async (filters = {}) => {
   await delay(500);
+  const db = getFilteredDatabase(filters.datasetId);
   const regionMap = {};
-  mockDatabase.forEach(item => {
+  db.forEach(item => {
     if (!regionMap[item.region]) {
       regionMap[item.region] = { region: item.region, sales: 0, profit: 0, quantity: 0 };
     }
@@ -187,10 +277,11 @@ export const getRegionSales = async () => {
   })).sort((a, b) => b.sales - a.sales);
 };
 
-export const getCategorySales = async () => {
+export const getCategorySales = async (filters = {}) => {
   await delay(500);
+  const db = getFilteredDatabase(filters.datasetId);
   const categoryMap = {};
-  mockDatabase.forEach(item => {
+  db.forEach(item => {
     if (!categoryMap[item.category]) {
       categoryMap[item.category] = { name: item.category, sales: 0, profit: 0, quantity: 0 };
     }
@@ -207,10 +298,11 @@ export const getCategorySales = async () => {
   }));
 };
 
-export const getTopStates = async () => {
+export const getTopStates = async (filters = {}) => {
   await delay(600);
+  const db = getFilteredDatabase(filters.datasetId);
   const stateMap = {};
-  mockDatabase.forEach(item => {
+  db.forEach(item => {
     if (!stateMap[item.state]) {
       stateMap[item.state] = { state: item.state, sales: 0, profit: 0, region: item.region };
     }
@@ -229,10 +321,11 @@ export const getTopStates = async () => {
     .slice(0, 10);
 };
 
-export const getDiscountAnalysis = async () => {
+export const getDiscountAnalysis = async (filters = {}) => {
   await delay(500);
+  const db = getFilteredDatabase(filters.datasetId);
   const discountMap = {};
-  mockDatabase.forEach(item => {
+  db.forEach(item => {
     const discPercent = (item.discount * 100).toFixed(0) + '%';
     if (!discountMap[discPercent]) {
       discountMap[discPercent] = { 
@@ -261,7 +354,7 @@ export const getDiscountAnalysis = async () => {
 // Advanced full dataset retrieve for Analytics Page
 export const getAnalyticsData = async (filters = {}) => {
   await delay(800);
-  let filtered = [...mockDatabase];
+  let filtered = getFilteredDatabase(filters.datasetId);
 
   if (filters.region && filters.region !== 'All') {
     filtered = filtered.filter(item => item.region === filters.region);
@@ -298,60 +391,120 @@ export const uploadCSV = async (file, onProgress) => {
   }
 
   // Simulate progress
-  for (let p = 0; p <= 100; p += 20) {
+  for (let p = 0; p <= 100; p += 25) {
     if (onProgress) onProgress(p);
-    await delay(150);
+    await delay(100);
   }
 
-  // Mock validating CSV column structure
-  // In a real app we would parse CSV header: "Region,Category,Sales,Profit,Discount,Quantity,State,City"
-  // Let's assume validation succeeds
-  
-  // Create a new mock entry from this file
-  const newTransactionsCount = 30; // simulate adding new rows
-  const newTransactions = [];
-  for (let i = 0; i < newTransactionsCount; i++) {
-    const region = REGIONS[Math.floor(Math.random() * REGIONS.length)];
-    const category = CATEGORIES[Math.floor(Math.random() * CATEGORIES.length)];
-    const states = REGION_STATES[region];
-    const stateObj = states[Math.floor(Math.random() * states.length)];
-    const quantity = Math.floor(Math.random() * 5) + 1;
-    const sales = parseFloat((Math.random() * 300 + 10).toFixed(2));
-    const profit = parseFloat((sales * 0.15).toFixed(2));
+  let text;
+  try {
+    text = await file.text();
+  } catch (err) {
+    throw new Error('Failed to read file contents.');
+  }
 
-    newTransactions.push({
-      id: `UP-${2026}-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`,
-      orderDate: new Date().toISOString().split('T')[0],
+  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  if (lines.length < 2) {
+    throw new Error('CSV file is empty or has no data rows.');
+  }
+
+  // Parse headers
+  const headers = parseCSVLine(lines[0]);
+  const requiredHeaders = ['region', 'category', 'sales', 'profit', 'discount', 'quantity', 'state', 'city'];
+  
+  // Check if all required headers exist
+  const headerMap = {};
+  headers.forEach((h, idx) => {
+    headerMap[h.toLowerCase()] = idx;
+  });
+
+  const missingHeaders = requiredHeaders.filter(req => headerMap[req] === undefined);
+  if (missingHeaders.length > 0) {
+    throw new Error(`Invalid CSV headers. Missing: ${missingHeaders.map(h => h.charAt(0).toUpperCase() + h.slice(1)).join(', ')}.`);
+  }
+
+  const datasetId = 'ds_' + Math.random().toString(36).substring(2, 10);
+  const parsedTransactions = [];
+  const startIdx = getGoldDatabase().length + 1;
+
+  for (let i = 1; i < lines.length; i++) {
+    const values = parseCSVLine(lines[i]);
+    if (values.length < requiredHeaders.length) continue; // Skip malformed lines
+
+    const region = values[headerMap['region']];
+    const category = values[headerMap['category']];
+    const salesVal = parseFloat(values[headerMap['sales']]);
+    const profitVal = parseFloat(values[headerMap['profit']]);
+    const discountVal = parseFloat(values[headerMap['discount']]);
+    const quantityVal = parseInt(values[headerMap['quantity']], 10);
+    const state = values[headerMap['state']];
+    const city = values[headerMap['city']];
+
+    if (isNaN(salesVal) || isNaN(profitVal) || isNaN(discountVal) || isNaN(quantityVal)) {
+      continue;
+    }
+
+    const subCategory = headerMap['subcategory'] !== undefined 
+      ? values[headerMap['subcategory']] 
+      : (CATEGORY_SUB_MAP[category]?.[0] || 'Other');
+      
+    const orderDate = headerMap['order date'] !== undefined 
+      ? values[headerMap['order date']] 
+      : (headerMap['orderdate'] !== undefined 
+         ? values[headerMap['orderdate']] 
+         : new Date().toISOString().split('T')[0]);
+
+    parsedTransactions.push({
+      id: `UP-${2026}-${String(startIdx + i).padStart(4, '0')}`,
+      sourceDatasetId: datasetId,
+      orderDate,
       region,
       category,
-      subCategory: CATEGORY_SUB_MAP[category][0],
-      state: stateObj.name,
-      city: stateObj.cities[0],
-      quantity,
-      discount: 0.1,
-      sales,
-      profit
+      subCategory,
+      state,
+      city,
+      quantity: quantityVal,
+      discount: discountVal,
+      sales: salesVal,
+      profit: profitVal
     });
   }
 
-  // Prepend to database
-  mockDatabase = [...newTransactions, ...mockDatabase];
+  if (parsedTransactions.length === 0) {
+    throw new Error('No valid transaction rows found in the CSV.');
+  }
+
+  const newDataset = {
+    id: datasetId,
+    fileName: file.name,
+    uploadedAt: new Date().toLocaleString(),
+    rowsCount: parsedTransactions.length,
+    data: parsedTransactions,
+    status: 'Ingested'
+  };
+
+  const datasets = getDatasetsList();
+  saveDatasetsList([...datasets, newDataset]);
 
   return {
     success: true,
     fileName: file.name,
-    rowsProcessed: newTransactionsCount,
+    rowsProcessed: parsedTransactions.length,
     message: 'CSV format validated and ingestion complete. Ready to run ETL Pipeline.'
   };
 };
 
 // Trigger ETL Pipeline Mock API
 export const triggerPipeline = async (onStageUpdate) => {
+  const datasets = getDatasetsList();
+  const pendingDatasets = datasets.filter(d => d.status === 'Ingested');
+  const pendingRows = pendingDatasets.reduce((sum, d) => sum + d.rowsCount, 0);
+
   const stages = [
-    { key: 'ingestion', name: 'Raw Ingestion', rows: 250, duration: '1.2s' },
-    { key: 'bronze', name: 'Bronze (Delta Table Created)', rows: 250, duration: '2.5s' },
-    { key: 'silver', name: 'Silver (Cleaned & De-duplicated)', rows: 238, duration: '3.1s' },
-    { key: 'gold', name: 'Gold (Aggregated Gold Cubes)', rows: 28, duration: '4.2s' }
+    { key: 'ingestion', name: 'Raw Ingestion', rows: pendingRows, duration: '1.2s' },
+    { key: 'bronze', name: 'Bronze (Delta Table Created)', rows: pendingRows, duration: '2.5s' },
+    { key: 'silver', name: 'Silver (Cleaned & De-duplicated)', rows: pendingRows, duration: '3.1s' },
+    { key: 'gold', name: 'Gold (Aggregated Gold Cubes)', rows: pendingDatasets.length > 0 ? 28 + pendingDatasets.length : 28, duration: '4.2s' }
   ];
 
   await delay(500);
@@ -388,10 +541,25 @@ export const triggerPipeline = async (onStageUpdate) => {
     await delay(300);
   }
 
+  // Update status of ingested datasets and merge into Gold DB
+  if (pendingDatasets.length > 0) {
+    let goldDb = getGoldDatabase();
+    
+    pendingDatasets.forEach(d => {
+      // Prepend the data
+      goldDb = [...d.data, ...goldDb];
+      d.status = 'Processed';
+    });
+
+    saveGoldDatabase(goldDb);
+    saveDatasetsList(datasets);
+  }
+
   return {
     success: true,
     status: 'Succeeded',
     totalDuration: '11.0s',
-    goldTablesUpdated: ['gold_region_sales', 'gold_category_sales', 'gold_top_states', 'gold_discount_analysis']
+    goldTablesUpdated: ['gold_region_sales', 'gold_category_sales', 'gold_top_states', 'gold_discount_analysis'],
+    processedFiles: pendingDatasets.map(d => d.fileName)
   };
 };
